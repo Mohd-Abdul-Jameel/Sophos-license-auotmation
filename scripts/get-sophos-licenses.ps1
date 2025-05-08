@@ -4,6 +4,11 @@ $clientSecret = $env:SOPHOS_CLIENT_SECRET
 $tenantId = $env:SOPHOS_TENANT_ID
 $outputFile = $env:OUTPUT_FILE
 
+if (-not $clientId -or -not $clientSecret) {
+    Write-Error "Client ID or Secret not set."
+    exit 1
+}
+
 # Authenticate with Sophos API
 $authBody = @{
     grant_type    = "client_credentials"
@@ -12,24 +17,40 @@ $authBody = @{
     scope         = "token"
 }
 
-$authResponse = Invoke-RestMethod -Uri "https://id.sophos.com/api/v2/oauth2/token" -Method Post -Body $authBody -ContentType "application/x-www-form-urlencoded"
+try {
+    $authResponse = Invoke-RestMethod -Uri "https://id.sophos.com/api/v2/oauth2/token" -Method Post -Body $authBody -ContentType "application/x-www-form-urlencoded"
+} catch {
+    Write-Error "Authentication failed: $_"
+    exit 1
+}
+
 $bearerToken = $authResponse.access_token
 
-# Get tenant information if not provided
+# Get tenant ID if not passed
 if (-not $tenantId) {
-    $whoamiResponse = Invoke-RestMethod -Uri "https://api.central.sophos.com/whoami/v1" -Method Get -Headers @{
-        "Authorization" = "Bearer $bearerToken"
+    try {
+        $whoamiResponse = Invoke-RestMethod -Uri "https://api.central.sophos.com/whoami/v1" -Method Get -Headers @{
+            "Authorization" = "Bearer $bearerToken"
+        }
+        $tenantId = $whoamiResponse.id
+    } catch {
+        Write-Error "Failed to fetch tenant ID: $_"
+        exit 1
     }
-    $tenantId = $whoamiResponse.id
 }
 
-# Get license information
-$licenseResponse = Invoke-RestMethod -Uri "https://api.central.sophos.com/endpoint/v1/licenses" -Method Get -Headers @{
-    "Authorization" = "Bearer $bearerToken"
-    "X-Tenant-ID"   = $tenantId
+# Get license info
+try {
+    $licenseResponse = Invoke-RestMethod -Uri "https://api.central.sophos.com/endpoint/v1/licenses" -Method Get -Headers @{
+        "Authorization" = "Bearer $bearerToken"
+        "X-Tenant-ID"   = $tenantId
+    }
+} catch {
+    Write-Error "Failed to fetch license data: $_"
+    exit 1
 }
 
-# Process license data
+# Format the data
 $licenseData = $licenseResponse.items | Select-Object type, status, @{
     Name = 'totalDevices'; Expression = { $_.quantity }
 }, @{
@@ -40,7 +61,13 @@ $licenseData = $licenseResponse.items | Select-Object type, status, @{
     Name = 'reportDate'; Expression = { Get-Date -Format "yyyy-MM-dd" }
 }
 
+# Ensure output directory exists
+$outputDir = Split-Path -Parent $outputFile
+if ($outputDir -and -not (Test-Path $outputDir)) {
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+}
+
 # Export to CSV
 $licenseData | Export-Csv -Path $outputFile -NoTypeInformation
 
-Write-Output "License data exported to $outputFile"
+Write-Output "✅ License data exported to $outputFile"
