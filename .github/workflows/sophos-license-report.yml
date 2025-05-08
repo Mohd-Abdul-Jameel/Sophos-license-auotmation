@@ -1,52 +1,45 @@
-###
-
 name: Sophos XDR License Report
 
-# Controls when the workflow will run
 on:
-  # Runs at 00:00 UTC every day
   schedule:
-    - cron: '0 0 * * *'
-  
-  # Allows manual trigger from the Actions tab
+    - cron: '0 0 * * *'  # Every day at 00:00 UTC
   workflow_dispatch:
 
-# Environment variables available to all jobs and steps
 env:
-  OUTPUT_FILE: sophos_license_report.csv
+  OUTPUT_FILE: output/sophos_license_report.csv
 
 jobs:
   generate-report:
     runs-on: ubuntu-latest
-    
+
     steps:
-      # Checkout the repository code
+      # Step 1: Checkout repo code
       - name: Checkout repository
         uses: actions/checkout@v3
-      
-      # Set up PowerShell on Ubuntu
+
+      # Step 2: Set up PowerShell
       - name: Set up PowerShell
         uses: actions/setup-powershell@v2
         with:
           powershell-version: '7.2'
-      
-      # Run the PowerShell script with secrets
+
+      # Step 3: Run the updated PowerShell script
       - name: Run Sophos API script
         shell: pwsh
         env:
           SOPHOS_CLIENT_ID: ${{ secrets.SOPHOS_CLIENT_ID }}
           SOPHOS_CLIENT_SECRET: ${{ secrets.SOPHOS_CLIENT_SECRET }}
           SOPHOS_TENANT_ID: ${{ secrets.SOPHOS_TENANT_ID }}
-        run: |
-          ./scripts/get-sophos-licenses.ps1
-      
-      # Configure Git user
+          OUTPUT_FILE: ${{ env.OUTPUT_FILE }}
+        run: ./scripts/get-sophos-licenses.ps1
+
+      # Step 4: Configure Git
       - name: Configure Git
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-      
-      # Commit and push if there are changes
+
+      # Step 5: Commit and push only if changes exist
       - name: Commit and push changes
         run: |
           git add ${{ env.OUTPUT_FILE }}
