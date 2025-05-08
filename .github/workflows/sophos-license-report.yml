@@ -19,7 +19,7 @@ jobs:
 
       # Step 2: Set up PowerShell
       - name: Set up PowerShell
-        uses: actions/setup-powershell@v1
+        uses: actions/setup-powershell-Action@v1
         with:
           powershell-version: '7.2'
 
