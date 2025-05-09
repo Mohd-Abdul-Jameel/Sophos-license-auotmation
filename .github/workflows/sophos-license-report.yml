@@ -1,43 +1,30 @@
-name: Sophos XDR License Report
+name: Sophos License Collector
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Every day at 00:00 UTC
-  workflow_dispatch:
-
-env:
-  OUTPUT_FILE: output/sophos_license_report.csv
+    - cron: '0 6 * * *'  # Runs at 6:00 AM UTC every day
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
-  generate-report:
-    runs-on: ubuntu-latest
-
-    steps:
-      # Step 1: Checkout repo code
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
+  collect-license-data:
+    runs-on: windows-latest
     
-
-      # Step 3: Run the updated PowerShell script
-      - name: Run Sophos API script
-        shell: pwsh
-        env:
-          SOPHOS_CLIENT_ID: ${{ secrets.SOPHOS_CLIENT_ID }}
-          SOPHOS_CLIENT_SECRET: ${{ secrets.SOPHOS_CLIENT_SECRET }}
-          SOPHOS_TENANT_ID: ${{ secrets.SOPHOS_TENANT_ID }}
-          OUTPUT_FILE: ${{ env.OUTPUT_FILE }}
-        run: ./scripts/get-sophos-licenses.ps1
-
-      # Step 4: Configure Git
-      - name: Configure Git
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-      # Step 5: Commit and push only if changes exist
-      - name: Commit and push changes
-        run: |
-          git add ${{ env.OUTPUT_FILE }}
-          git diff --staged --quiet || git commit -m "Update Sophos XDR license data [skip ci]"
-          git push
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Run PowerShell script
+      shell: pwsh
+      env:
+        SOPHOS_CLIENT_ID: ${{ secrets.SOPHOS_CLIENT_ID }}
+        SOPHOS_CLIENT_SECRET: ${{ secrets.SOPHOS_CLIENT_SECRET }}
+        SOPHOS_TENANT_ID: ${{ secrets.SOPHOS_TENANT_ID }}
+      run: |
+        ./get-sophos-licenses.ps1
+    
+    - name: Commit and push changes
+      run: |
+        git config --global user.name 'GitHub Actions'
+        git config --global user.email 'actions@github.com'
+        git add SophosLicenses.csv
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update Sophos license data - $(Get-Date -Format 'yyyy-MM-dd')" && git push)
