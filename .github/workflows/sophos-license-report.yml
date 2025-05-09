@@ -20,7 +20,7 @@ jobs:
         SOPHOS_CLIENT_SECRET: ${{ secrets.SOPHOS_CLIENT_SECRET }}
         SOPHOS_TENANT_ID: ${{ secrets.SOPHOS_TENANT_ID }}
       run: |
-        ./get-sophos-licenses.ps1
+        ./scripts/get-sophos-licenses.ps1
     
     - name: Commit and push changes
       run: |
