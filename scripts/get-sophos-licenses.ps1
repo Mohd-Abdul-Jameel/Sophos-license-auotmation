@@ -1,66 +1,63 @@
-# Get environment variables
-$clientId     = $env:SOPHOS_CLIENT_ID
+# Set TLS 1.2
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Get credentials from environment variables (set by GitHub Actions)
+$clientId = $env:SOPHOS_CLIENT_ID
 $clientSecret = $env:SOPHOS_CLIENT_SECRET
-$tenantId     = $env:SOPHOS_TENANT_ID
-$outputFile   = $env:OUTPUT_FILE
+$tenantId = $env:SOPHOS_TENANT_ID
 
-# Authenticate with Sophos API
-$authBody = @{
-    grant_type    = "client_credentials"
-    client_id     = $clientId
-    client_secret = $clientSecret
-    scope         = "token"
+# Set headers for token request
+$tokenHeaders = @{
+    "Content-Type" = "application/x-www-form-urlencoded"
 }
 
-try {
-    $authResponse = Invoke-RestMethod -Uri "https://id.sophos.com/api/v2/oauth2/token" -Method Post -Body $authBody -ContentType "application/x-www-form-urlencoded"
-    $bearerToken = $authResponse.access_token
-} catch {
-    Write-Error "Failed to authenticate with Sophos API: $_"
-    exit 1
-}
+# Include client ID and secret in the body
+$tokenBody = "grant_type=client_credentials&scope=token&client_id=$clientId&client_secret=$clientSecret"
 
-# Get tenant info and API host
 try {
-    $whoamiResponse = Invoke-RestMethod -Uri "https://api.central.sophos.com/whoami/v1" -Method Get -Headers @{
+    Write-Host "Requesting bearer token..."
+    $tokenResponse = Invoke-RestMethod -Uri "https://id.sophos.com/api/v2/oauth2/token" -Method Post -Headers $tokenHeaders -Body $tokenBody
+    $bearerToken = $tokenResponse.access_token
+    
+    Write-Host "Token acquired successfully!"
+
+    # Get Licenses Data
+    $licenseHeaders = @{
         "Authorization" = "Bearer $bearerToken"
+        "Accept" = "application/json"
+        "X-Tenant-ID" = $tenantId
     }
 
-    $tenantId = if ($tenantId) { $tenantId } else { $whoamiResponse.id }
-    $apiHost  = $whoamiResponse.apiHosts.dataRegion
-} catch {
-    Write-Error "Failed to retrieve tenant information: $_"
-    exit 1
+    Write-Host "Requesting license data..."
+    $licenseResponse = Invoke-RestMethod -Uri "https://api.central.sophos.com/licenses/v1/licenses" -Method Get -Headers $licenseHeaders
+
+    # Create simplified license summary
+    $simpleLicenseSummary = @()
+    
+    foreach ($license in $licenseResponse.licenses) {
+        # Handle missing usage.current.count property
+        $usedCount = 0
+        if ($license.usage -and $license.usage.current -and $license.usage.current.count) {
+            $usedCount = $license.usage.current.count
+        }
+        
+        $simpleLicenseSummary += [PSCustomObject]@{
+            Date = (Get-Date -Format "yyyy-MM-dd")
+            License = $license.product.name
+            Total = $license.quantity
+            Used = $usedCount
+            Available = $license.quantity - $usedCount
+            UtilizationPercentage = if ($license.quantity -gt 0) { [math]::Round(($usedCount / $license.quantity) * 100, 2) } else { 0 }
+        }
+    }
+
+    # Export to CSV file in the repository
+    $simpleLicenseSummary | Export-Csv -Path "SophosLicenses.csv" -NoTypeInformation
+
+    Write-Host "License data successfully exported to CSV file!"
 }
-
-# Get license info using correct API host
-try {
-    $licenseResponse = Invoke-RestMethod -Uri "https://$apiHost/endpoint/v1/licenses" -Method Get -Headers @{
-        "Authorization" = "Bearer $bearerToken"
-        "X-Tenant-ID"   = $tenantId
-    }
-
-    # Format the output
-    $licenseData = $licenseResponse.items | Select-Object type, status, @{
-        Name = 'totalDevices'; Expression = { $_.quantity }
-    }, @{
-        Name = 'usedLicenses'; Expression = { $_.used }
-    }, @{
-        Name = 'availableLicenses'; Expression = { $_.quantity - $_.used }
-    }, @{
-        Name = 'reportDate'; Expression = { Get-Date -Format "yyyy-MM-dd" }
-    }
-
-    # Ensure output directory exists
-    $outputDir = Split-Path -Path $outputFile
-    if (-not (Test-Path $outputDir)) {
-        New-Item -Path $outputDir -ItemType Directory | Out-Null
-    }
-
-    # Export to CSV
-    $licenseData | Export-Csv -Path $outputFile -NoTypeInformation
-    Write-Output "✅ License data exported to $outputFile"
-} catch {
-    Write-Error "❌ Failed to fetch license data: $_"
+catch {
+    Write-Host "Error occurred:" -ForegroundColor Red
+    Write-Host $_.Exception.Message
     exit 1
 }
