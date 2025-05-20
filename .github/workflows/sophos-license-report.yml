@@ -2,7 +2,7 @@ name: Sophos License Collector
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # Runs at 6:00 AM UTC every day
+    - cron: '30 2,6,11,15 * * *'  #  Runs at 8:00 AM, 12:00 PM, 5:00 PM, and 9:00 PM IST
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
